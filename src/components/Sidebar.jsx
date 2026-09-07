@@ -1,6 +1,6 @@
 const NAV_ITEMS = ['Sitrep', 'Creative Team', 'SEO', 'Email Marketing', 'Social Media', 'System Health']
 
-export default function Sidebar({ active, onSelect }) {
+export default function Sidebar({ active, onSelect, userEmail, onSignOut }) {
   return (
     <aside className="sidebar">
       <div className="brand">
@@ -22,8 +22,10 @@ export default function Sidebar({ active, onSelect }) {
       ))}
 
       <div className="sidebar-foot">
-        <span>rhyzn8n</span>
-        <span>Admin</span>
+        <span>{userEmail || 'rhyzn8n'}</span>
+        <span className="open-link" onClick={onSignOut} style={{ cursor: 'pointer' }}>
+          Sign out
+        </span>
       </div>
     </aside>
   )
