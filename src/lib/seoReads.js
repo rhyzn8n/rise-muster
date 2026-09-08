@@ -61,6 +61,12 @@ export async function fetchSeoStats(range) {
     ga4ById[doc.id] = doc.data()
   })
 
+  const daysWithData = dayIds.filter((id) => ga4ById[id]?.totals).length
+  console.info(
+    `[Muster] SEO date window: ${dayIds[0]} to ${dayIds[dayIds.length - 1]} (${dayIds.length} days requested, ${daysWithData} have synced ga4Daily data). Missing day IDs:`,
+    dayIds.filter((id) => !ga4ById[id]?.totals)
+  )
+
   let aiReferralSessions = 0
   dayIds.forEach((id) => {
     const d = ga4ById[id]
@@ -170,6 +176,8 @@ export async function fetchSeoStats(range) {
     sessions,
     visitors,
     newUsers,
+    daysWithData,
+    daysRequested: dayIds.length,
     cwvStatus,
     articlesPublished,
     avgCompositeScore,
