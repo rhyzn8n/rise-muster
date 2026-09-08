@@ -81,7 +81,8 @@ const socialMediaCard = {
 }
 
 export default function SitrepTab({ range }) {
-  const { loading, error, creativeTeam, emailMarketing, seo } = useLiveStats(range)
+  const { loading, errors, creativeTeam, emailMarketing, seo } = useLiveStats(range)
+  const errorCount = Object.keys(errors || {}).length
 
   const cards = [
     buildCreativeTeamCard(creativeTeam),
@@ -97,7 +98,7 @@ export default function SitrepTab({ range }) {
       <div className="section-head">
         <h2>Operations</h2>
         <div className="hint">
-          {loading ? 'Loading live data…' : error ? 'Some live reads failed — check console' : 'Click a card to open the full app'}
+          {loading ? 'Loading live data…' : errorCount ? `${errorCount} card(s) failed to load — check console` : 'Click a card to open the full app'}
         </div>
       </div>
 
