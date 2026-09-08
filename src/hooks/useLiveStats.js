@@ -7,22 +7,45 @@ import { fetchSeoStats } from '../lib/seoReads.js'
 // how SEO Pulse's own data is already just a periodic sync snapshot, and
 // keeps this first data-wiring pass simple. Can move to onSnapshot later if
 // a live-updating dashboard turns out to matter.
+//
+// Uses allSettled, not all — one card's read failing (e.g. a Firestore rules
+// issue on one collection) should never blank out the other two. Each
+// failure is logged to console with a clear label so it's actually visible,
+// instead of silently swallowed into state.
 export function useLiveStats(range) {
-  const [state, setState] = useState({ loading: true, error: null, creativeTeam: null, emailMarketing: null, seo: null })
+  const [state, setState] = useState({
+    loading: true,
+    errors: {},
+    creativeTeam: null,
+    emailMarketing: null,
+    seo: null,
+  })
 
   useEffect(() => {
     let cancelled = false
-    setState((s) => ({ ...s, loading: true, error: null }))
+    setState((s) => ({ ...s, loading: true, errors: {} }))
 
-    Promise.all([fetchCreativeTeamCounts(range), fetchEmailMarketingStats(range), fetchSeoStats(range)])
-      .then(([creativeTeam, emailMarketing, seo]) => {
-        if (cancelled) return
-        setState({ loading: false, error: null, creativeTeam, emailMarketing, seo })
+    const jobs = [
+      { key: 'creativeTeam', label: 'Creative Team (Job Docket)', fn: fetchCreativeTeamCounts },
+      { key: 'emailMarketing', label: 'Email Marketing (Lead Importer)', fn: fetchEmailMarketingStats },
+      { key: 'seo', label: 'SEO (SEO Pulse)', fn: fetchSeoStats },
+    ]
+
+    Promise.allSettled(jobs.map((j) => j.fn(range))).then((results) => {
+      if (cancelled) return
+
+      const next = { loading: false, errors: {}, creativeTeam: null, emailMarketing: null, seo: null }
+      results.forEach((result, i) => {
+        const { key, label } = jobs[i]
+        if (result.status === 'fulfilled') {
+          next[key] = result.value
+        } else {
+          console.error(`[Muster] ${label} failed to load:`, result.reason)
+          next.errors[key] = result.reason?.message || String(result.reason)
+        }
       })
-      .catch((err) => {
-        if (cancelled) return
-        setState({ loading: false, error: err, creativeTeam: null, emailMarketing: null, seo: null })
-      })
+      setState(next)
+    })
 
     return () => {
       cancelled = true
