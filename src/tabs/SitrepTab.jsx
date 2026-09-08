@@ -60,7 +60,7 @@ function buildSeoCard(live) {
       { num: d.articlesPublished ?? '—', label: 'Articles published' },
       { num: d.avgCompositeScore ?? '—', label: 'Avg. composite score' },
     ],
-    footnote: 'Sessions/Visitors/New users: period avg. vs. a 30-day trailing baseline (Watch = >25% below baseline, matching Overview\u2019s own anomaly threshold). CWV health: Google\u2019s official thresholds, latest snapshot only (PageSpeed has no history).',
+    footnote: 'Sessions/Visitors/New users show the period TOTAL (matches SEO Pulse\u2019s own Site Traffic tab). Good/Watch is judged on the period\u2019s daily average vs. a 30-day trailing daily-average baseline (Watch = >25% below), so it stays fair across different-length ranges.',
   }
 }
 
