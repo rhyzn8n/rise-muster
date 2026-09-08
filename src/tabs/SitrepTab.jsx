@@ -58,9 +58,9 @@ function buildSeoCard(live) {
       { num: fmt(d.newUsers), label: `New users (${d.newUsers?.status ?? '—'})`, tone: tone(d.newUsers) },
       { num: d.cwvStatus ?? '—', label: 'CWV health (latest)', tone: d.cwvStatus === 'Poor' ? 'down' : d.cwvStatus === 'Good' ? 'up' : undefined },
       { num: d.articlesPublished ?? '—', label: 'Articles published' },
-      { num: d.avgCompositeScore ?? '—', label: 'Avg. composite score' },
+      { num: d.avgQualityScore ?? '—', label: 'Avg. quality score' },
     ],
-    footnote: `Totals cover Muster's own selected range (${d.daysWithData ?? '?'} of ${d.daysRequested ?? '?'} days synced) — won't match SEO Pulse's Site Traffic tab unless both cover the same window. Good/Watch compares this period's daily average against the 30 days immediately before it, not against SEO Pulse's own numbers.`,
+    footnote: `Totals cover Muster's own selected range (${d.daysWithData ?? '?'} of ${d.daysRequested ?? '?'} days synced) — won't match SEO Pulse's Site Traffic tab unless both cover the same window. Good/Watch compares this period's daily average against the 30 days immediately before it. CWV health uses a 7-day rolling average of PageSpeed's score (not raw metrics), matching SEO Pulse's own noise-smoothing approach.`,
   }
 }
 
