@@ -1,9 +1,9 @@
-import { collection, getDocs, collectionGroup } from 'firebase/firestore'
+import { collection, getDocs, doc, getDoc } from 'firebase/firestore'
 import { db } from '../firebase.js'
 import { dateToISO, rangeToISOBounds } from './dateRange.js'
-import { computeQualityScore, computeRevisionEfficiency, computeComposite } from './seoScoring.js'
+import { computeQualityScore, DEFAULT_QUALITY_WEIGHTS } from './seoScoring.js'
 import { buildKeywordMap, countRankingMovers } from './keywordMapLogic.js'
-import { classifyCumulative } from './webVitalsThresholds.js'
+import { computeRollingAverages, classifyCumulative } from './webVitalsThresholds.js'
 
 // ---------------------------------------------------------------------------
 // ga4Daily field names (totals.sessions/totalUsers/newUsers) and cwvSnapshots
@@ -95,55 +95,54 @@ export async function fetchSeoStats(range) {
   const visitors = { value: visitorsTotal, status: baselineStatus(visitorsAvg, visitorsBaseline) }
   const newUsers = { value: newUsersTotal, status: baselineStatus(newUsersAvg, newUsersBaseline) }
 
-  // Core Web Vitals — always the LATEST snapshot, never range-averaged.
-  // PageSpeed has no historical endpoint, so this is a current-state read.
+  // Core Web Vitals — 7-day rolling average per page/device (PageSpeed's
+  // own `score`, 0-100), not raw LCP/INP/CLS thresholds — a single day's
+  // Lighthouse run is noisy, per SEO Pulse's own Technical Health tab.
+  // Fetch the last 14 days so there's enough history for a real 7-day
+  // window even if the most recent day or two hasn't synced yet.
   const cwvSnap = await getDocs(collection(db, 'seoPulse', 'meta', 'cwvSnapshots'))
-  let latestCwvDoc = null
-  let latestCwvId = null
+  const today = new Date()
+  const cwv14DayIds = new Set(eachDateInRange(new Date(today.getTime() - 13 * 86400000), today))
+  const cwvDocs = []
   cwvSnap.forEach((doc) => {
-    if (!latestCwvId || doc.id > latestCwvId) {
-      latestCwvId = doc.id
-      latestCwvDoc = doc.data()
-    }
+    if (cwv14DayIds.has(doc.id)) cwvDocs.push({ id: doc.id, ...doc.data() })
   })
-  const cwvStatus = latestCwvDoc ? classifyCumulative(latestCwvDoc.pages || []) : null
+  const { rollingByKey } = computeRollingAverages(cwvDocs)
+  const cwvStatus = classifyCumulative(rollingByKey)
 
-  // Articles — used for both composite score and keyword-map matching.
+  // Articles — used for both Quality Score and keyword-map matching.
   const { startISO, endISO } = rangeToISOBounds(range)
   const articlesSnap = await getDocs(collection(db, 'seoPulse', 'meta', 'articles'))
   const allArticles = articlesSnap.docs.map((doc) => ({ id: doc.id, ...doc.data() }))
+
+  // Quality Weights are admin-editable in SEO Pulse's Sync & Admin — read
+  // the live value directly off the seoPulse/meta doc rather than keeping
+  // a hardcoded copy, so this can never silently drift out of sync if
+  // someone changes the weights there. Falls back to the confirmed default
+  // only if the field has never been set.
+  const metaSnap = await getDoc(doc(db, 'seoPulse', 'meta'))
+  const qualityWeights = metaSnap.exists() && metaSnap.data().qualityWeights
+    ? metaSnap.data().qualityWeights
+    : DEFAULT_QUALITY_WEIGHTS
 
   const publishedThisRange = allArticles.filter(
     (a) => a.status === 'Published' && a.publishDate && a.publishDate >= startISO && a.publishDate <= endISO
   )
 
   let articlesPublished = 0
-  let compositeSum = 0
-  let compositeCount = 0
+  let qualitySum = 0
+  let qualityCount = 0
 
-  if (publishedThisRange.length) {
-    const revisionsSnap = await getDocs(collectionGroup(db, 'revisions'))
-    const revisionsByArticleId = {}
-    revisionsSnap.forEach((doc) => {
-      const articleId = doc.ref.parent.parent?.id
-      if (!articleId) return
-      if (!revisionsByArticleId[articleId]) revisionsByArticleId[articleId] = []
-      revisionsByArticleId[articleId].push(doc.data())
-    })
+  publishedThisRange.forEach((a) => {
+    articlesPublished += 1
+    const quality = computeQualityScore(a, qualityWeights)
+    if (quality != null) {
+      qualitySum += quality
+      qualityCount += 1
+    }
+  })
 
-    publishedThisRange.forEach((a) => {
-      articlesPublished += 1
-      const quality = computeQualityScore(a)
-      const revisionEfficiency = computeRevisionEfficiency(revisionsByArticleId[a.id])
-      const composite = computeComposite(quality, revisionEfficiency)
-      if (composite != null) {
-        compositeSum += composite
-        compositeCount += 1
-      }
-    })
-  }
-
-  const avgCompositeScore = compositeCount ? Math.round((compositeSum / compositeCount) * 10) / 10 : null
+  const avgQualityScore = qualityCount ? Math.round((qualitySum / qualityCount) * 10) / 10 : null
 
   // Conflicts to Fix — trailing 90-day GSC window, ending yesterday (GSC's
   // own reporting delay means "today" never has real data yet). Computed
@@ -180,7 +179,7 @@ export async function fetchSeoStats(range) {
     daysRequested: dayIds.length,
     cwvStatus,
     articlesPublished,
-    avgCompositeScore,
+    avgQualityScore,
     // Computed but not on the Sitrep card this round — available for a
     // future SEO detail tab.
     aiReferralSessions,
