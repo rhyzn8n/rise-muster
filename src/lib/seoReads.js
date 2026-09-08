@@ -3,20 +3,16 @@ import { db } from '../firebase.js'
 import { dateToISO, rangeToISOBounds } from './dateRange.js'
 import { computeQualityScore, computeRevisionEfficiency, computeComposite } from './seoScoring.js'
 import { buildKeywordMap, countRankingMovers } from './keywordMapLogic.js'
+import { classifyCumulative } from './webVitalsThresholds.js'
 
 // ---------------------------------------------------------------------------
-// AI referral fields, and the Articles Published / Avg Composite Score
-// formulas, are confirmed against real source (scoring.js). Conflicts to Fix
-// now uses the real cannibalization logic (keywordMap.js) — see
-// keywordMapLogic.js for the one unconfirmed piece (normalizePath).
+// ga4Daily field names (totals.sessions/totalUsers/newUsers) and cwvSnapshots
+// shape (pages[].lcp/inp/cls) both confirmed against real source
+// (sync-ga4.js / sync-cwv.js) — no more guessing on these two.
 //
 // TODO-VERIFY: Article Library path assumed as seoPulse/meta/articles with
 // a `revisions` subcollection — mirrors the confirmed ga4Daily/gscDaily
 // pattern but isn't itself confirmed against source.
-//
-// Still not computed — needs the trend-classification logic, not yet
-// reviewed:
-//   - Ranking movers
 // ---------------------------------------------------------------------------
 
 function eachDateInRange(start, end) {
@@ -29,20 +25,65 @@ function eachDateInRange(start, end) {
   return dates
 }
 
+function avgOverDays(byId, dayIds, field) {
+  const values = dayIds.map((id) => byId[id]?.totals?.[field]).filter((v) => typeof v === 'number')
+  if (!values.length) return null
+  return values.reduce((a, b) => a + b, 0) / values.length
+}
+
+// Good unless current average is more than 25% below the 30-day baseline —
+// same deviation threshold SEO Pulse's own Overview tab uses. Traffic being
+// unusually high is never flagged as a problem, only a real drop is.
+function baselineStatus(current, baseline) {
+  if (current == null || baseline == null || baseline === 0) return null
+  return current >= baseline * 0.75 ? 'Good' : 'Watch'
+}
+
 export async function fetchSeoStats(range) {
   const dayIds = eachDateInRange(range.start, range.end)
   const ga4Snap = await getDocs(collection(db, 'seoPulse', 'meta', 'ga4Daily'))
 
-  const byId = {}
+  const ga4ById = {}
   ga4Snap.forEach((doc) => {
-    byId[doc.id] = doc.data()
+    ga4ById[doc.id] = doc.data()
   })
 
   let aiReferralSessions = 0
   dayIds.forEach((id) => {
-    const d = byId[id]
+    const d = ga4ById[id]
     if (d && typeof d.aiReferralSessions === 'number') aiReferralSessions += d.aiReferralSessions
   })
+
+  // 30-day trailing baseline, immediately before the selected range.
+  const baselineEnd = new Date(range.start.getTime() - 1)
+  const baselineStart = new Date(baselineEnd)
+  baselineStart.setDate(baselineStart.getDate() - 29)
+  const baselineDayIds = eachDateInRange(baselineStart, baselineEnd)
+
+  const sessionsAvg = avgOverDays(ga4ById, dayIds, 'sessions')
+  const visitorsAvg = avgOverDays(ga4ById, dayIds, 'totalUsers')
+  const newUsersAvg = avgOverDays(ga4ById, dayIds, 'newUsers')
+
+  const sessionsBaseline = avgOverDays(ga4ById, baselineDayIds, 'sessions')
+  const visitorsBaseline = avgOverDays(ga4ById, baselineDayIds, 'totalUsers')
+  const newUsersBaseline = avgOverDays(ga4ById, baselineDayIds, 'newUsers')
+
+  const sessions = { value: sessionsAvg != null ? Math.round(sessionsAvg) : null, status: baselineStatus(sessionsAvg, sessionsBaseline) }
+  const visitors = { value: visitorsAvg != null ? Math.round(visitorsAvg) : null, status: baselineStatus(visitorsAvg, visitorsBaseline) }
+  const newUsers = { value: newUsersAvg != null ? Math.round(newUsersAvg) : null, status: baselineStatus(newUsersAvg, newUsersBaseline) }
+
+  // Core Web Vitals — always the LATEST snapshot, never range-averaged.
+  // PageSpeed has no historical endpoint, so this is a current-state read.
+  const cwvSnap = await getDocs(collection(db, 'seoPulse', 'meta', 'cwvSnapshots'))
+  let latestCwvDoc = null
+  let latestCwvId = null
+  cwvSnap.forEach((doc) => {
+    if (!latestCwvId || doc.id > latestCwvId) {
+      latestCwvId = doc.id
+      latestCwvDoc = doc.data()
+    }
+  })
+  const cwvStatus = latestCwvDoc ? classifyCumulative(latestCwvDoc.pages || []) : null
 
   // Articles — used for both composite score and keyword-map matching.
   const { startISO, endISO } = rangeToISOBounds(range)
@@ -82,7 +123,8 @@ export async function fetchSeoStats(range) {
   const avgCompositeScore = compositeCount ? Math.round((compositeSum / compositeCount) * 10) / 10 : null
 
   // Conflicts to Fix — trailing 90-day GSC window, ending yesterday (GSC's
-  // own reporting delay means "today" never has real data yet).
+  // own reporting delay means "today" never has real data yet). Computed
+  // but not shown on the Sitrep card — kept for a future SEO detail tab.
   const gscEnd = new Date()
   gscEnd.setDate(gscEnd.getDate() - 1)
   const gscStart = new Date(gscEnd)
@@ -98,26 +140,26 @@ export async function fetchSeoStats(range) {
 
   const { conflictsToFix } = buildKeywordMap(gscDocsInWindow, allArticles)
 
-  // Ranking movers: current selected range vs. the immediately-prior
-  // period of equal length (not the 90-day cannibalization window above —
-  // this follows the card's own date-range selector instead).
   const rangeSpanMs = range.end.getTime() - range.start.getTime()
   const priorEnd = new Date(range.start.getTime() - 1)
   const priorStart = new Date(priorEnd.getTime() - rangeSpanMs)
-
   const currentRangeDayIds = eachDateInRange(range.start, range.end)
   const priorRangeDayIds = eachDateInRange(priorStart, priorEnd)
-  const currentDocs = currentRangeDayIds.map((id) => gscById[id]).filter(Boolean)
-  const priorDocs = priorRangeDayIds.map((id) => gscById[id]).filter(Boolean)
-
-  const { improving, declining } = countRankingMovers(currentDocs, priorDocs)
+  const currentGscDocs = currentRangeDayIds.map((id) => gscById[id]).filter(Boolean)
+  const priorGscDocs = priorRangeDayIds.map((id) => gscById[id]).filter(Boolean)
+  const { improving, declining } = countRankingMovers(currentGscDocs, priorGscDocs)
 
   return {
-    aiReferralSessions,
+    sessions,
+    visitors,
+    newUsers,
+    cwvStatus,
     articlesPublished,
     avgCompositeScore,
+    // Computed but not on the Sitrep card this round — available for a
+    // future SEO detail tab.
+    aiReferralSessions,
     conflictsToFix,
     rankingMovers: { improving, declining },
-    organicSessions: null, // not read — field name not confirmed
   }
 }
