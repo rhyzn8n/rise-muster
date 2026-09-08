@@ -47,19 +47,20 @@ function buildEmailMarketingCard(live) {
 
 function buildSeoCard(live) {
   const d = live || {}
-  const movers = d.rankingMovers ? `${d.rankingMovers.improving} ↑ / ${d.rankingMovers.declining} ↓` : '—'
+  const fmt = (v) => (v?.value != null ? v.value.toLocaleString() : '—')
+  const tone = (v) => (v?.status === 'Watch' ? 'down' : v?.status === 'Good' ? 'up' : undefined)
   return {
     displayName: 'SEO',
-    status: 'warn',
+    status: d.cwvStatus === 'Poor' ? 'bad' : d.cwvStatus === 'Needs Improvement' ? 'warn' : 'good',
     stats: [
-      { num: PENDING, label: 'Organic sessions' },
-      { num: d.aiReferralSessions ?? '—', label: 'AI referral sessions*' },
-      { num: movers, label: 'Ranking movers' },
-      { num: d.conflictsToFix ?? '—', label: 'Conflicts to fix' },
+      { num: fmt(d.sessions), label: `Sessions (${d.sessions?.status ?? '—'})`, tone: tone(d.sessions) },
+      { num: fmt(d.visitors), label: `Unique visitors (${d.visitors?.status ?? '—'})`, tone: tone(d.visitors) },
+      { num: fmt(d.newUsers), label: `New users (${d.newUsers?.status ?? '—'})`, tone: tone(d.newUsers) },
+      { num: d.cwvStatus ?? '—', label: 'CWV health (latest)', tone: d.cwvStatus === 'Poor' ? 'down' : d.cwvStatus === 'Good' ? 'up' : undefined },
       { num: d.articlesPublished ?? '—', label: 'Articles published' },
       { num: d.avgCompositeScore ?? '—', label: 'Avg. composite score' },
     ],
-    footnote: '*floor estimate. AI referral, Ranking movers, Conflicts to fix, Articles published, and Avg. composite score are all live now — only Organic sessions is still pending (field name unconfirmed).',
+    footnote: 'Sessions/Visitors/New users: period avg. vs. a 30-day trailing baseline (Watch = >25% below baseline, matching Overview\u2019s own anomaly threshold). CWV health: Google\u2019s official thresholds, latest snapshot only (PageSpeed has no history).',
   }
 }
 
