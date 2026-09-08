@@ -10,6 +10,13 @@ import { classifyCumulative } from './webVitalsThresholds.js'
 // shape (pages[].lcp/inp/cls) both confirmed against real source
 // (sync-ga4.js / sync-cwv.js) — no more guessing on these two.
 //
+// Sessions/Visitors/New users display the PERIOD TOTAL (sum across the
+// selected range) — matching what SEO Pulse's own Site Traffic tab shows.
+// The Good/Watch status is computed separately from the PERIOD AVERAGE
+// (per-day) vs. the 30-day baseline's per-day average, since the current
+// range and the baseline window can have different day counts, so their
+// totals alone aren't a fair comparison — only their daily rates are.
+//
 // TODO-VERIFY: Article Library path assumed as seoPulse/meta/articles with
 // a `revisions` subcollection — mirrors the confirmed ga4Daily/gscDaily
 // pattern but isn't itself confirmed against source.
@@ -29,6 +36,12 @@ function avgOverDays(byId, dayIds, field) {
   const values = dayIds.map((id) => byId[id]?.totals?.[field]).filter((v) => typeof v === 'number')
   if (!values.length) return null
   return values.reduce((a, b) => a + b, 0) / values.length
+}
+
+function sumOverDays(byId, dayIds, field) {
+  const values = dayIds.map((id) => byId[id]?.totals?.[field]).filter((v) => typeof v === 'number')
+  if (!values.length) return null
+  return values.reduce((a, b) => a + b, 0)
 }
 
 // Good unless current average is more than 25% below the 30-day baseline —
@@ -64,13 +77,17 @@ export async function fetchSeoStats(range) {
   const visitorsAvg = avgOverDays(ga4ById, dayIds, 'totalUsers')
   const newUsersAvg = avgOverDays(ga4ById, dayIds, 'newUsers')
 
+  const sessionsTotal = sumOverDays(ga4ById, dayIds, 'sessions')
+  const visitorsTotal = sumOverDays(ga4ById, dayIds, 'totalUsers')
+  const newUsersTotal = sumOverDays(ga4ById, dayIds, 'newUsers')
+
   const sessionsBaseline = avgOverDays(ga4ById, baselineDayIds, 'sessions')
   const visitorsBaseline = avgOverDays(ga4ById, baselineDayIds, 'totalUsers')
   const newUsersBaseline = avgOverDays(ga4ById, baselineDayIds, 'newUsers')
 
-  const sessions = { value: sessionsAvg != null ? Math.round(sessionsAvg) : null, status: baselineStatus(sessionsAvg, sessionsBaseline) }
-  const visitors = { value: visitorsAvg != null ? Math.round(visitorsAvg) : null, status: baselineStatus(visitorsAvg, visitorsBaseline) }
-  const newUsers = { value: newUsersAvg != null ? Math.round(newUsersAvg) : null, status: baselineStatus(newUsersAvg, newUsersBaseline) }
+  const sessions = { value: sessionsTotal, status: baselineStatus(sessionsAvg, sessionsBaseline) }
+  const visitors = { value: visitorsTotal, status: baselineStatus(visitorsAvg, visitorsBaseline) }
+  const newUsers = { value: newUsersTotal, status: baselineStatus(newUsersAvg, newUsersBaseline) }
 
   // Core Web Vitals — always the LATEST snapshot, never range-averaged.
   // PageSpeed has no historical endpoint, so this is a current-state read.
