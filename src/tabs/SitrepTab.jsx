@@ -47,18 +47,19 @@ function buildEmailMarketingCard(live) {
 
 function buildSeoCard(live) {
   const d = live || {}
+  const movers = d.rankingMovers ? `${d.rankingMovers.improving} ↑ / ${d.rankingMovers.declining} ↓` : '—'
   return {
     displayName: 'SEO',
     status: 'warn',
     stats: [
       { num: PENDING, label: 'Organic sessions' },
       { num: d.aiReferralSessions ?? '—', label: 'AI referral sessions*' },
-      { num: PENDING, label: 'Ranking movers' },
-      { num: PENDING, label: 'Conflicts to fix' },
-      { num: PENDING, label: 'Articles published' },
-      { num: PENDING, label: 'Avg. composite score' },
+      { num: movers, label: 'Ranking movers' },
+      { num: d.conflictsToFix ?? '—', label: 'Conflicts to fix' },
+      { num: d.articlesPublished ?? '—', label: 'Articles published' },
+      { num: d.avgCompositeScore ?? '—', label: 'Avg. composite score' },
     ],
-    footnote: '*floor estimate. Only AI referral sessions is wired — its field name is the one thing the handoff names exactly. The rest need scoring.js/keywordMap.js.',
+    footnote: '*floor estimate. AI referral, Ranking movers, Conflicts to fix, Articles published, and Avg. composite score are all live now — only Organic sessions is still pending (field name unconfirmed).',
   }
 }
 
