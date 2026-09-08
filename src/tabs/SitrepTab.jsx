@@ -60,7 +60,7 @@ function buildSeoCard(live) {
       { num: d.articlesPublished ?? '—', label: 'Articles published' },
       { num: d.avgCompositeScore ?? '—', label: 'Avg. composite score' },
     ],
-    footnote: `Sessions/Visitors/New users show the period TOTAL, from ${d.daysWithData ?? '?'} of ${d.daysRequested ?? '?'} requested days having synced data. Good/Watch is judged on the period's daily average vs. a 30-day trailing daily-average baseline.`,
+    footnote: `Totals cover Muster's own selected range (${d.daysWithData ?? '?'} of ${d.daysRequested ?? '?'} days synced) — won't match SEO Pulse's Site Traffic tab unless both cover the same window. Good/Watch compares this period's daily average against the 30 days immediately before it, not against SEO Pulse's own numbers.`,
   }
 }
 
