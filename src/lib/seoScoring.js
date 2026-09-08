@@ -1,32 +1,49 @@
 // ---------------------------------------------------------------------------
-// Ported verbatim from SEO Pulse's real lib/scoring.js (confirmed against
-// source, not reconstructed from the handoff's description of it).
+// Ported verbatim from SEO Pulse's real, current lib/scoring.js. Composite
+// Score (Quality x75% + Revision Efficiency x25%) is no longer used by
+// Muster — replaced with Quality Score alone, per the app's own update.
 // ---------------------------------------------------------------------------
 
-export const QUALITY_WEIGHT = 0.75
-export const REVISION_WEIGHT = 0.25
-
-export function computeQualityScore(article) {
-  const scores = [article.yoastSeoScore, article.yoastReadabilityScore, article.headlineScore].filter(
-    (v) => v != null
-  )
-  if (!scores.length) return null
-  return scores.reduce((a, b) => a + b, 0) / scores.length
+// Platform facts (Yoast's own scoring systems), not admin-configurable.
+export const RAW_SCORE_MAX = {
+  headlineScore: 100,
+  yoastSeoScore: 19,
+  yoastReadabilityScore: 7,
 }
 
-// Each revision entry can carry a `count` (e.g. "2 minor revisions" logged
-// as one entry) — defaults to 1 if not set.
-export function computeRevisionEfficiency(revisions) {
-  if (!revisions || revisions.length === 0) return 100
-  const majorEquivalents = revisions.reduce((sum, r) => {
-    const count = r.count || 1
-    return sum + count * (r.type === 'major' ? 1 : 1 / 3)
+// Admin-configurable in SEO Pulse's Sync & Admin — if these are ever
+// changed there, Muster's own average will silently drift from SEO Pulse's
+// display unless this default is updated to match.
+export const DEFAULT_QUALITY_WEIGHTS = {
+  yoastSeoScore: 0.5,
+  yoastReadabilityScore: 0.35,
+  headlineScore: 0.15,
+}
+
+// Weighted average of Headline/Yoast SEO/Yoast Readability, each first
+// normalized to a 0-100% of its own max before weighting. Missing fields
+// are excluded and the remaining weights renormalized, so a partially
+// scored article isn't penalized for a blank field.
+export function computeQualityScore(article, weights = DEFAULT_QUALITY_WEIGHTS) {
+  const fields = ['headlineScore', 'yoastSeoScore', 'yoastReadabilityScore']
+  const items = fields
+    .map((field) => ({
+      field,
+      raw: article[field],
+      max: RAW_SCORE_MAX[field],
+      weight: weights[field] ?? 0,
+    }))
+    .filter((item) => item.raw != null)
+
+  if (!items.length) return null
+
+  const totalWeight = items.reduce((sum, item) => sum + item.weight, 0)
+  if (totalWeight === 0) return null
+
+  const weightedSum = items.reduce((sum, item) => {
+    const pct = (item.raw / item.max) * 100
+    return sum + pct * item.weight
   }, 0)
-  const score = 100 - majorEquivalents * 28 - Math.max(0, majorEquivalents - 1) * 24
-  return Math.max(0, Math.round(score))
-}
 
-export function computeComposite(qualityScore, revisionEfficiency) {
-  if (qualityScore == null) return null
-  return qualityScore * QUALITY_WEIGHT + revisionEfficiency * REVISION_WEIGHT
+  return weightedSum / totalWeight
 }
