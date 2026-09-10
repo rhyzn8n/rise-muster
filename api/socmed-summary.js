@@ -61,12 +61,6 @@ function eventRating(ev) {
   return (ev.attendance / ev.registrations) * 100;
 }
 
-// "Current month" is derived from the requested range's end date, since
-// channel stats are only ever logged at monthly granularity — a Weekly or
-// Custom sub-month range has no finer-grained channel data to read.
-function monthKeyFromDate(isoDateStr) {
-  return isoDateStr.slice(0, 7); // "YYYY-MM-DD" -> "YYYY-MM"
-}
 function shiftMonthKey(monthKey, delta) {
   const [y, m] = monthKey.split("-").map(Number);
   const d = new Date(y, m - 1 + delta, 1);
@@ -120,31 +114,46 @@ export default async function handler(req, res) {
     }));
     const serviceCoverage = { covered: coveredSet.size, total: trackedServices.length };
 
-    // --- Channel Growth (current month vs. previous month, summed across
-    // all channels — monthly granularity only, doesn't vary by Weekly vs
-    // Monthly vs Custom selection) ---
-    const currentMonthKey = monthKeyFromDate(end);
-    const previousMonthKey = shiftMonthKey(currentMonthKey, -1);
-    let currentTotal = 0;
-    let previousTotal = 0;
-    let channelsWithCurrentData = 0;
+    // --- Channel Growth ---
+    // Anchored on whatever month is actually the MOST RECENTLY LOGGED across
+    // all channels — not on today's calendar month. Channel stats are
+    // logged manually, in batches, often near month-end, so "today's
+    // month" frequently has zero entries yet even mid-month. Anchoring on
+    // calendar-today produced a false "-100% growth" the first time this
+    // ran (0 current vs. a real previous total looks like total collapse,
+    // when it actually just meant "nobody's logged this month yet").
+    // This mirrors the same "always shows latest logged stats" philosophy
+    // the source app's own Channel Snapshot section already uses.
+    const allLoggedMonths = new Set()
     Object.values(channelStats).forEach((rows) => {
-      const currentRow = (rows || []).find((r) => r.month === currentMonthKey);
-      const previousRow = (rows || []).find((r) => r.month === previousMonthKey);
-      if (currentRow) {
-        currentTotal += Number(currentRow.followers) || 0;
-        channelsWithCurrentData += 1;
-      }
-      if (previousRow) previousTotal += Number(previousRow.followers) || 0;
-    });
+      ;(rows || []).forEach((r) => { if (r.month) allLoggedMonths.add(r.month) })
+    })
+    const sortedMonths = [...allLoggedMonths].sort()
+    const currentMonthKey = sortedMonths.length ? sortedMonths[sortedMonths.length - 1] : null
+    const previousMonthKey = currentMonthKey ? shiftMonthKey(currentMonthKey, -1) : null
+
+    let currentTotal = 0
+    let previousTotal = 0
+    let channelsWithCurrentData = 0
+    if (currentMonthKey) {
+      Object.values(channelStats).forEach((rows) => {
+        const currentRow = (rows || []).find((r) => r.month === currentMonthKey)
+        const previousRow = (rows || []).find((r) => r.month === previousMonthKey)
+        if (currentRow) {
+          currentTotal += Number(currentRow.followers) || 0
+          channelsWithCurrentData += 1
+        }
+        if (previousRow) previousTotal += Number(previousRow.followers) || 0
+      })
+    }
     const channelGrowth = {
       currentMonthKey,
       previousMonthKey,
       currentTotal,
       previousTotal,
-      growthPct: previousTotal > 0 ? ((currentTotal - previousTotal) / previousTotal) * 100 : null,
+      growthPct: currentMonthKey && previousTotal > 0 ? ((currentTotal - previousTotal) / previousTotal) * 100 : null,
       channelsWithCurrentData,
-    };
+    }
 
     // --- Events ---
     const eventsInRange = events.filter((e) => e.eventDate >= start && e.eventDate <= end);
