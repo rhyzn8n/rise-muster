@@ -89,7 +89,7 @@ function buildSocialMediaCard(live) {
       { num: ev.countInRange ?? '—', label: 'Events this period' },
       { num: topEventLabel, label: `Top event (${attendance} attendance)` },
     ],
-    footnote: 'All live via the serverless bridge to Socmed Tracker\u2019s own Firebase project. Channel growth is monthly-granularity only (same figure regardless of Weekly/Monthly/Custom), since the source data itself is only logged once a month.',
+    footnote: 'All live via the serverless bridge to Socmed Tracker\u2019s own Firebase project. Channel growth compares the most recently LOGGED month across channels (not today\u2019s calendar month) against the one before it \u2014 avoids a false \u201c-100%\u201d reading on days when this month\u2019s stats haven\u2019t been logged yet.',
   }
 }
 
