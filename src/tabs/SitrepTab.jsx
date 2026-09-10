@@ -64,32 +64,44 @@ function buildSeoCard(live) {
   }
 }
 
-// Social Media has no same-project bridge built yet (separate Firebase
-// project) — this card stays fully placeholder until that serverless
-// function exists.
-const socialMediaCard = {
-  displayName: 'Social Media',
-  status: 'good',
-  stats: [
-    { num: PENDING, label: 'Requests (excl. scheduler)' },
-    { num: PENDING, label: 'Service coverage' },
-    { num: PENDING, label: 'Events this period' },
-    { num: PENDING, label: 'Monthly target' },
-    { num: PENDING, label: 'Most successful event' },
-    { num: '—', label: 'Cumulative growth**' },
-  ],
-  footnote: '**Socmed Tracker lives in a separate Firebase project — needs the serverless bridge function before any of this is live.',
+function buildSocialMediaCard(live) {
+  const d = live || {}
+  const rc = d.requestCompletion || {}
+  const sc = d.serviceCoverage || {}
+  const cg = d.channelGrowth || {}
+  const ev = d.events || {}
+
+  const growthPct = cg.growthPct != null ? `${cg.growthPct >= 0 ? '+' : ''}${cg.growthPct.toFixed(1)}%` : '—'
+  const growthTone = cg.growthPct != null ? (cg.growthPct >= 0 ? 'up' : 'down') : undefined
+  const coverage = sc.total != null ? `${sc.covered} / ${sc.total}` : '—'
+  const completion = rc.completionRate != null ? `${rc.completionRate}%` : '—'
+  const attendance = ev.avgAttendanceRating != null ? `${ev.avgAttendanceRating.toFixed(1)}%` : '—'
+  const topEventLabel = ev.mostSuccessfulEvent ? ev.mostSuccessfulEvent.title : '—'
+
+  return {
+    displayName: 'Social Media',
+    status: 'good',
+    stats: [
+      { num: growthPct, label: `Channel growth (${cg.currentMonthKey ?? '?'} vs ${cg.previousMonthKey ?? '?'})`, tone: growthTone },
+      { num: coverage, label: 'Service coverage' },
+      { num: rc.totalRequests ?? '—', label: 'Requests (excl. scheduler)' },
+      { num: completion, label: 'Completion rate' },
+      { num: ev.countInRange ?? '—', label: 'Events this period' },
+      { num: topEventLabel, label: `Top event (${attendance} attendance)` },
+    ],
+    footnote: 'All live via the serverless bridge to Socmed Tracker\u2019s own Firebase project. Channel growth is monthly-granularity only (same figure regardless of Weekly/Monthly/Custom), since the source data itself is only logged once a month.',
+  }
 }
 
 export default function SitrepTab({ range }) {
-  const { loading, errors, creativeTeam, emailMarketing, seo } = useLiveStats(range)
+  const { loading, errors, creativeTeam, emailMarketing, seo, socmed } = useLiveStats(range)
   const errorCount = Object.keys(errors || {}).length
 
   const cards = [
     buildCreativeTeamCard(creativeTeam),
     buildSeoCard(seo),
     buildEmailMarketingCard(emailMarketing),
-    socialMediaCard,
+    buildSocialMediaCard(socmed),
   ]
 
   return (
